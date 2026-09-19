@@ -1,16 +1,25 @@
 <!DOCTYPE html>
 <html>
-  <head><link rel="manifest" href="manifest.json"><title>Shadow Game</title></head>
-<body style="margin:0;background:#000">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="manifest" href="manifest.json">
+<title>Shadow Game</title>
+</head>
+<body style="margin:0;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none">
 <canvas id="c" style="display:block;touch-action:none"></canvas>
 <script>
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
-  const c = document.getElementById("c");
+const c = document.getElementById("c");
 const g = c.getContext("2d");
-c.width = innerWidth; c.height = innerHeight;
-const floor = c.height * 0.75;
-let px = c.width / 2, py = floor, vy = 0, dir = 0, face = 1;
-let mx = -150, cx = c.width + 500;
+const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+c.width = Math.round(innerWidth * dpr); c.height = Math.round(innerHeight * dpr);
+c.style.width = innerWidth + "px"; c.style.height = innerHeight + "px";
+const Z = c.height / 340, W = c.width / Z, H = 340, floor = H * 0.8;
+window.addEventListener("orientationchange", () => setTimeout(() => location.reload(), 300));
+window.oncontextmenu = e => e.preventDefault();
+let px = W / 2, py = floor, vy = 0, dir = 0, face = 1;
+let mx = -150, cx = W + 500;
 let score = 0, best = 0, t = 0, shake = 0, flash = 0, hb = 0;
 let lx = 0, ly = 0;
 const dust = [];
@@ -37,28 +46,37 @@ function tone(freq, dur, type, vol, slide) {
   o.start(); o.stop(ac.currentTime + dur);
 }
 const stars = [];
-for (let i = 0; i < 50; i++) stars.push([Math.random() * c.width, Math.random() * floor * 0.6, Math.random() * 2 + 1]);
+for (let i = 0; i < 50; i++) stars.push([Math.random() * W, Math.random() * floor * 0.6, Math.random() * 2 + 1]);
 const houses = [];
-for (let x = -20; x < c.width; ) {
-  const w = 70 + Math.random() * 60, h = 90 + Math.random() * 110;
+for (let x = -20; x < W; ) {
+  const w = 70 + Math.random() * 60, h = 90 + Math.random() * 100;
   houses.push({ x, w, h, win: Math.random() < 0.5 });
   x += w + 10 + Math.random() * 30;
 }
+function zoneDir(ts) {
+  let d = 0;
+  for (const tc of ts) {
+    const x = tc.clientX / innerWidth;
+    if (x < 0.21) d = -1; else if (x < 0.45) d = 1;
+  }
+  return d;
+}
 c.ontouchstart = e => {
   startAudio();
-  const tx = e.changedTouches[0].clientX;
-  if (tx < c.width / 3) dir = -1;
-  else if (tx > c.width * 2 / 3) dir = 1;
-  else if (py >= floor) { vy = -17; tone(300, 0.15, "sine", 0.15, 600); }
+  for (const tc of e.changedTouches) {
+    if (tc.clientX / innerWidth > 0.5 && py >= floor) { vy = -17; tone(300, 0.15, "sine", 0.15, 600); }
+  }
+  dir = zoneDir(e.touches);
 };
-c.ontouchend = () => { dir = 0; };
+c.ontouchmove = e => { dir = zoneDir(e.touches); };
+c.ontouchend = c.ontouchcancel = e => { dir = zoneDir(e.touches); };
 function background() {
   const sky = g.createLinearGradient(0, 0, 0, floor);
   sky.addColorStop(0, "#070b16"); sky.addColorStop(1, "#1c2b3c");
-  g.fillStyle = sky; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
   g.fillStyle = "rgba(255,255,255,0.6)";
   stars.forEach(s => g.fillRect(s[0], s[1], s[2], s[2]));
-  const moonX = c.width * 0.8, moonY = c.height * 0.14;
+  const moonX = W * 0.8, moonY = H * 0.16;
   const mg = g.createRadialGradient(moonX, moonY, 20, moonX, moonY, 110);
   mg.addColorStop(0, "rgba(200,220,255,0.35)");
   mg.addColorStop(1, "rgba(200,220,255,0)");
@@ -143,11 +161,36 @@ function drawCrawler() {
   g.fillRect(cx - 8, floor - 26, 5, 5);
   g.shadowBlur = 0;
 }
+function buttons() {
+  const r = c.height * 0.1, y = c.height * 0.87;
+  g.fillStyle = "rgba(255,220,150,0.13)";
+  g.strokeStyle = "rgba(255,220,150,0.35)"; g.lineWidth = 2 * dpr;
+  [[0.11, 1], [0.32, 1], [0.82, 1.25]].forEach(b => {
+    g.beginPath(); g.arc(c.width * b[0], y, r * b[1], 0, 7); g.fill(); g.stroke();
+  });
+  g.fillStyle = "rgba(255,220,150,0.55)";
+  const a = r * 0.4;
+  let bx = c.width * 0.11;
+  g.beginPath(); g.moveTo(bx - a, y); g.lineTo(bx + a * 0.6, y - a); g.lineTo(bx + a * 0.6, y + a); g.fill();
+  bx = c.width * 0.32;
+  g.beginPath(); g.moveTo(bx + a, y); g.lineTo(bx - a * 0.6, y - a); g.lineTo(bx - a * 0.6, y + a); g.fill();
+  bx = c.width * 0.82;
+  g.beginPath(); g.moveTo(bx, y - a); g.lineTo(bx + a, y + a * 0.7); g.lineTo(bx - a, y + a * 0.7); g.fill();
+}
 function draw() {
+  if (c.height > c.width) {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = "#000"; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = "#ffdc96"; g.font = (22 * dpr) + "px sans-serif"; g.textAlign = "center";
+    g.fillText("Rotate your phone", c.width / 2, c.height / 2);
+    g.textAlign = "left";
+    requestAnimationFrame(draw);
+    return;
+  }
   t++;
   px += dir * 4;
   if (dir) face = dir;
-  px = Math.max(20, Math.min(c.width - 20, px));
+  px = Math.max(20, Math.min(W - 20, px));
   const wasAir = py < floor;
   vy += 0.8; py += vy;
   if (py > floor) { py = floor; vy = 0; }
@@ -167,10 +210,10 @@ function draw() {
   score += 1 / 60;
   const speed = Math.min(3 + score * 0.04, 5.5);
   mx += speed;
-  if (mx > c.width + 100) mx = -100 - Math.random() * 300;
+  if (mx > W + 100) mx = -100 - Math.random() * 300;
   if (score >= 8) {
     cx -= Math.min(5 + score * 0.05, 8);
-    if (cx < -100) cx = c.width + 100 + Math.random() * 400;
+    if (cx < -100) cx = W + 100 + Math.random() * 400;
     if (Math.abs(px - cx) < 350 && t % 7 === 0) tone(600 + Math.random() * 300, 0.03, "square", 0.04);
   }
   const dist = Math.min(Math.abs(px - mx), Math.abs(px - cx));
@@ -184,12 +227,13 @@ function draw() {
       best = score;
       try { localStorage.setItem("best", best); } catch (e) {}
     }
-    score = 0; px = c.width / 2; mx = -150; cx = c.width + 500;
+    score = 0; px = W / 2; mx = -150; cx = W + 500;
     shake = 25; flash = 1;
     tone(120, 0.6, "sawtooth", 0.35, 30);
   }
   lx = px + face * 16;
   ly = py - 32 + Math.sin(t * 0.1) * 2;
+  g.setTransform(Z, 0, 0, Z, 0, 0);
   g.save();
   if (shake > 0) {
     g.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
@@ -202,12 +246,12 @@ function draw() {
   light.addColorStop(0, "rgba(255,200,120,0.6)");
   light.addColorStop(1, "rgba(0,0,0,0)");
   g.fillStyle = light;
-  g.fillRect(0, 0, c.width, c.height);
+  g.fillRect(0, 0, W, H);
   g.globalCompositeOperation = "source-over";
   g.fillStyle = "#020203";
-  g.fillRect(0, floor, c.width, c.height);
+  g.fillRect(0, floor, W, H);
   g.fillStyle = "rgba(120,140,160,0.3)";
-  g.fillRect(0, floor, c.width, 2);
+  g.fillRect(0, floor, W, 2);
   dust.forEach(d => {
     g.fillStyle = "rgba(150,160,175," + (d.life * 0.5) + ")";
     g.fillRect(d.x, d.y - 2, 3, 3);
@@ -221,23 +265,25 @@ function draw() {
   fog.addColorStop(0.6, "rgba(140,160,180," + fa + ")");
   fog.addColorStop(1, "rgba(140,160,180,0)");
   g.fillStyle = fog;
-  g.fillRect(0, floor - 140, c.width, 170);
-  const r0 = Math.min(c.width, c.height) * 0.4;
-  const r1 = Math.max(c.width, c.height) * 0.7;
-  const vg = g.createRadialGradient(c.width / 2, c.height / 2, r0, c.width / 2, c.height / 2, r1);
+  g.fillRect(0, floor - 140, W, 170);
+  const r0 = Math.min(W, H) * 0.4;
+  const r1 = Math.max(W, H) * 0.7;
+  const vg = g.createRadialGradient(W / 2, H / 2, r0, W / 2, H / 2, r1);
   vg.addColorStop(0, "rgba(0,0,0,0)");
   vg.addColorStop(1, "rgba(0,0,0,0.85)");
   g.fillStyle = vg;
-  g.fillRect(0, 0, c.width, c.height);
+  g.fillRect(0, 0, W, H);
   g.restore();
+  g.setTransform(1, 0, 0, 1, 0, 0);
   if (flash > 0) {
     g.fillStyle = "rgba(255,40,40," + (flash * 0.5) + ")";
     g.fillRect(0, 0, c.width, c.height);
     flash -= 0.05;
   }
+  buttons();
   g.fillStyle = "rgba(255,220,150,0.7)";
-  g.font = "20px sans-serif";
-  g.fillText("Time: " + score.toFixed(0) + "s   Best: " + best.toFixed(0) + "s", 20, 40);
+  g.font = (18 * dpr) + "px sans-serif";
+  g.fillText("Time: " + score.toFixed(0) + "s   Best: " + best.toFixed(0) + "s", 20 * dpr, 34 * dpr);
   requestAnimationFrame(draw);
 }
 draw();
