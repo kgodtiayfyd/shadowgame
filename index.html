@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<body style="margin:0;background:#000">
+<canvas id="c" style="display:block;touch-action:none"></canvas>
+<script>
+const c = document.getElementById("c");
+const g = c.getContext("2d");
+c.width = innerWidth; c.height = innerHeight;
+const floor = c.height * 0.75;
+let px = c.width / 2, py = floor, vy = 0, dir = 0, face = 1;
+let mx = -150, cx = c.width + 500;
+let score = 0, best = 0, t = 0, shake = 0, flash = 0, hb = 0;
+let lx = 0, ly = 0;
+const dust = [];
+try { best = +localStorage.getItem("best") || 0; } catch (e) {}
+let ac = null, master = null, hum = null;
+function startAudio() {
+  if (ac) { if (ac.state === "suspended") ac.resume(); return; }
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  master = ac.createGain(); master.gain.value = 0.6; master.connect(ac.destination);
+  const o = ac.createOscillator(); o.type = "sawtooth"; o.frequency.value = 45;
+  const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 120;
+  hum = ac.createGain(); hum.gain.value = 0.06;
+  o.connect(f); f.connect(hum); hum.connect(master); o.start();
+}
+function tone(freq, dur, type, vol, slide) {
+  if (!ac) return;
+  const o = ac.createOscillator(), gn = ac.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, ac.currentTime);
+  if (slide) o.frequency.exponentialRampToValueAtTime(slide, ac.currentTime + dur);
+  gn.gain.setValueAtTime(vol, ac.currentTime);
+  gn.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+  o.connect(gn); gn.connect(master);
+  o.start(); o.stop(ac.currentTime + dur);
+}
+const stars = [];
+for (let i = 0; i < 50; i++) stars.push([Math.random() * c.width, Math.random() * floor * 0.6, Math.random() * 2 + 1]);
+const houses = [];
+for (let x = -20; x < c.width; ) {
+  const w = 70 + Math.random() * 60, h = 90 + Math.random() * 110;
+  houses.push({ x, w, h, win: Math.random() < 0.5 });
+  x += w + 10 + Math.random() * 30;
+}
+c.ontouchstart = e => {
+  startAudio();
+  const tx = e.changedTouches[0].clientX;
+  if (tx < c.width / 3) dir = -1;
+  else if (tx > c.width * 2 / 3) dir = 1;
+  else if (py >= floor) { vy = -17; tone(300, 0.15, "sine", 0.15, 600); }
+};
+c.ontouchend = () => { dir = 0; };
+function background() {
+  const sky = g.createLinearGradient(0, 0, 0, floor);
+  sky.addColorStop(0, "#070b16"); sky.addColorStop(1, "#1c2b3c");
+  g.fillStyle = sky; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = "rgba(255,255,255,0.6)";
+  stars.forEach(s => g.fillRect(s[0], s[1], s[2], s[2]));
+  const moonX = c.width * 0.8, moonY = c.height * 0.14;
+  const mg = g.createRadialGradient(moonX, moonY, 20, moonX, moonY, 110);
+  mg.addColorStop(0, "rgba(200,220,255,0.35)");
+  mg.addColorStop(1, "rgba(200,220,255,0)");
+  g.fillStyle = mg; g.fillRect(moonX - 110, moonY - 110, 220, 220);
+  g.fillStyle = "#e4ecf5";
+  g.beginPath(); g.arc(moonX, moonY, 28, 0, 7); g.fill();
+  g.fillStyle = "#04060b";
+  houses.forEach(hs => {
+    g.fillRect(hs.x, floor - hs.h, hs.w, hs.h);
+    g.beginPath();
+    g.moveTo(hs.x - 8, floor - hs.h);
+    g.lineTo(hs.x + hs.w / 2, floor - hs.h - 40);
+    g.lineTo(hs.x + hs.w + 8, floor - hs.h);
+    g.fill();
+  });
+  houses.forEach(hs => {
+    if (hs.win) {
+      g.fillStyle = "rgba(255,190,90," + (0.6 + 0.3 * Math.sin(t / 20 + hs.x)) + ")";
+      g.fillRect(hs.x + hs.w * 0.35, floor - hs.h * 0.5, 12, 16);
+    }
+  });
+}
+function drawPlayer() {
+  const run = dir !== 0 && py >= floor;
+  const sw = run ? Math.sin(t * 0.35) * 10 : 0;
+  g.strokeStyle = "#000"; g.fillStyle = "#000";
+  g.lineWidth = 7; g.lineCap = "round";
+  g.beginPath();
+  if (py < floor) {
+    g.moveTo(px - 4, py - 22); g.lineTo(px - 10, py - 8);
+    g.moveTo(px + 4, py - 22); g.lineTo(px + 10, py - 12);
+  } else {
+    g.moveTo(px - 3, py - 22); g.lineTo(px - 3 + sw, py);
+    g.moveTo(px + 3, py - 22); g.lineTo(px + 3 - sw, py);
+  }
+  g.stroke();
+  g.fillRect(px - 9, py - 52, 18, 32);
+  g.beginPath(); g.arc(px, py - 60, 11, 0, 7); g.fill();
+  g.lineWidth = 2;
+  g.beginPath(); g.moveTo(px + face * 6, py - 42); g.lineTo(lx, ly - 6); g.stroke();
+  g.fillStyle = "#ffcf70"; g.shadowColor = "#ffb040"; g.shadowBlur = 20;
+  g.fillRect(lx - 4, ly - 6, 8, 12);
+  g.shadowBlur = 0;
+}
+function drawMonster() {
+  const w = Math.sin(t * 0.15);
+  g.fillStyle = "#000"; g.strokeStyle = "#000";
+  g.beginPath();
+  g.moveTo(mx - 24, floor);
+  g.quadraticCurveTo(mx - 30, floor - 70, mx - 8, floor - 100);
+  g.quadraticCurveTo(mx + 4, floor - 112, mx + 16, floor - 96);
+  g.quadraticCurveTo(mx + 34, floor - 60, mx + 26, floor);
+  g.closePath(); g.fill();
+  g.lineWidth = 6; g.lineCap = "round";
+  g.beginPath();
+  g.moveTo(mx + 10, floor - 70);
+  g.quadraticCurveTo(mx + 40, floor - 55 + w * 10, mx + 48, floor - 30 + w * 14);
+  g.moveTo(mx - 14, floor - 70);
+  g.quadraticCurveTo(mx - 40, floor - 50 - w * 10, mx - 44, floor - 25 - w * 14);
+  g.stroke();
+  const eh = (t % 180 < 8) ? 2 : 7;
+  g.shadowColor = "#f33"; g.shadowBlur = 15; g.fillStyle = "#f33";
+  g.fillRect(mx - 2, floor - 84, 6, eh);
+  g.fillRect(mx + 10, floor - 84, 6, eh);
+  g.shadowBlur = 0;
+}
+function drawCrawler() {
+  g.fillStyle = "#000"; g.strokeStyle = "#000";
+  g.lineWidth = 3; g.lineCap = "round";
+  g.beginPath();
+  for (let i = -1; i <= 1; i++) {
+    const s = Math.sin(t * 0.5 + i * 2) * 6;
+    g.moveTo(cx + i * 12, floor - 14);
+    g.lineTo(cx + i * 18 + s, floor);
+    g.moveTo(cx + i * 12, floor - 14);
+    g.lineTo(cx + i * 26 - s, floor - 4);
+  }
+  g.stroke();
+  g.beginPath(); g.ellipse(cx, floor - 18, 24, 14, 0, 0, 7); g.fill();
+  g.shadowColor = "#6f6"; g.shadowBlur = 12; g.fillStyle = "#7f7";
+  g.fillRect(cx - 16, floor - 24, 5, 5);
+  g.fillRect(cx - 8, floor - 26, 5, 5);
+  g.shadowBlur = 0;
+}
+function draw() {
+  t++;
+  px += dir * 4;
+  if (dir) face = dir;
+  px = Math.max(20, Math.min(c.width - 20, px));
+  const wasAir = py < floor;
+  vy += 0.8; py += vy;
+  if (py > floor) { py = floor; vy = 0; }
+  if (wasAir && py >= floor) {
+    tone(80, 0.1, "sine", 0.2, 40);
+    for (let i = 0; i < 6; i++) dust.push({ x: px, y: floor, vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 2, life: 1 });
+  }
+  if (dir && py >= floor && t % 6 === 0) {
+    dust.push({ x: px, y: floor, vx: -face * Math.random(), vy: -Math.random(), life: 1 });
+  }
+  if (dir && py >= floor && t % 12 === 0) tone(120 + Math.random() * 30, 0.05, "triangle", 0.06);
+  for (let i = dust.length - 1; i >= 0; i--) {
+    const d = dust[i];
+    d.x += d.vx; d.y += d.vy; d.life -= 0.03;
+    if (d.life <= 0) dust.splice(i, 1);
+  }
+  score += 1 / 60;
+  const speed = Math.min(3 + score * 0.04, 5.5);
+  mx += speed;
+  if (mx > c.width + 100) mx = -100 - Math.random() * 300;
+  if (score >= 8) {
+    cx -= Math.min(5 + score * 0.05, 8);
+    if (cx < -100) cx = c.width + 100 + Math.random() * 400;
+    if (Math.abs(px - cx) < 350 && t % 7 === 0) tone(600 + Math.random() * 300, 0.03, "square", 0.04);
+  }
+  const dist = Math.min(Math.abs(px - mx), Math.abs(px - cx));
+  if (hum) hum.gain.value = 0.06 + Math.max(0, 1 - dist / 400) * 0.12;
+  hb++;
+  if (dist < 320 && hb > 14 + dist / 8) { hb = 0; tone(60, 0.12, "sine", 0.35, 40); }
+  const hitM = Math.abs(px - mx) < 24 && py > floor - 50;
+  const hitC = Math.abs(px - cx) < 26 && py > floor - 32;
+  if (hitM || hitC) {
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem("best", best); } catch (e) {}
+    }
+    score = 0; px = c.width / 2; mx = -150; cx = c.width + 500;
+    shake = 25; flash = 1;
+    tone(120, 0.6, "sawtooth", 0.35, 30);
+  }
+  lx = px + face * 16;
+  ly = py - 32 + Math.sin(t * 0.1) * 2;
+  g.save();
+  if (shake > 0) {
+    g.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+    shake *= 0.9;
+    if (shake < 0.5) shake = 0;
+  }
+  background();
+  g.globalCompositeOperation = "lighter";
+  const light = g.createRadialGradient(lx, ly, 10, lx, ly, 240);
+  light.addColorStop(0, "rgba(255,200,120,0.6)");
+  light.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = light;
+  g.fillRect(0, 0, c.width, c.height);
+  g.globalCompositeOperation = "source-over";
+  g.fillStyle = "#020203";
+  g.fillRect(0, floor, c.width, c.height);
+  g.fillStyle = "rgba(120,140,160,0.3)";
+  g.fillRect(0, floor, c.width, 2);
+  dust.forEach(d => {
+    g.fillStyle = "rgba(150,160,175," + (d.life * 0.5) + ")";
+    g.fillRect(d.x, d.y - 2, 3, 3);
+  });
+  drawPlayer();
+  drawMonster();
+  drawCrawler();
+  const fa = 0.16 + 0.05 * Math.sin(t / 60);
+  const fog = g.createLinearGradient(0, floor - 140, 0, floor + 30);
+  fog.addColorStop(0, "rgba(140,160,180,0)");
+  fog.addColorStop(0.6, "rgba(140,160,180," + fa + ")");
+  fog.addColorStop(1, "rgba(140,160,180,0)");
+  g.fillStyle = fog;
+  g.fillRect(0, floor - 140, c.width, 170);
+  const r0 = Math.min(c.width, c.height) * 0.4;
+  const r1 = Math.max(c.width, c.height) * 0.7;
+  const vg = g.createRadialGradient(c.width / 2, c.height / 2, r0, c.width / 2, c.height / 2, r1);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(0,0,0,0.85)");
+  g.fillStyle = vg;
+  g.fillRect(0, 0, c.width, c.height);
+  g.restore();
+  if (flash > 0) {
+    g.fillStyle = "rgba(255,40,40," + (flash * 0.5) + ")";
+    g.fillRect(0, 0, c.width, c.height);
+    flash -= 0.05;
+  }
+  g.fillStyle = "rgba(255,220,150,0.7)";
+  g.font = "20px sans-serif";
+  g.fillText("Time: " + score.toFixed(0) + "s   Best: " + best.toFixed(0) + "s", 20, 40);
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>
